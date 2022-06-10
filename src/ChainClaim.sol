@@ -10,11 +10,11 @@ abstract contract ChainClaim is EIP712 {
   error ErrorInvalidClaimantSignature();
 
   bytes32 private immutable _CHAIN_CLAIM_TYPEHASH =
-    keccak256("Claim(address chainedAddress)");
+    keccak256("Claim(address chainedAddress, bytes32 voucherHash)");
 
   address public immutable ISSUER;
 
-  mapping(address => bool) public usedClaims;
+  mapping(bytes32 => bool) public usedVouchers;
 
   /// @notice On chain generation for a valid EIP-712 hash
   /// @param _issuer the address that must match the signing
@@ -27,9 +27,13 @@ abstract contract ChainClaim is EIP712 {
   /// @notice On chain generation for a valid EIP-712 hash
   /// @param chainedAddress the address that has been signed
   /// @return The typed data hash
-  function genDataHash(address chainedAddress) internal view returns (bytes32) {
+  function genDataHash(address chainedAddress, bytes32 voucherHash)
+    internal
+    view
+    returns (bytes32)
+  {
     bytes32 structHash = keccak256(
-      abi.encode(_CHAIN_CLAIM_TYPEHASH, chainedAddress)
+      abi.encode(_CHAIN_CLAIM_TYPEHASH, chainedAddress, voucherHash)
     );
 
     return _hashTypedDataV4(structHash);
@@ -44,11 +48,12 @@ abstract contract ChainClaim is EIP712 {
   /// @return True if signature is valid and signer matches issuer
   function isValidIssuerSig(
     address issuedAddress,
+    bytes32 voucherHash,
     uint8 v,
     bytes32 r,
     bytes32 s
   ) internal view returns (bool) {
-    bytes32 hash = genDataHash(issuedAddress);
+    bytes32 hash = genDataHash(issuedAddress, voucherHash);
 
     address signer = ECDSA.recover(hash, v, r, s);
 
@@ -67,11 +72,12 @@ abstract contract ChainClaim is EIP712 {
   function isValidClaimantSig(
     address issuedAddress,
     address destinationAddress,
+    bytes32 voucherHash,
     uint8 v,
     bytes32 r,
     bytes32 s
   ) internal view returns (bool) {
-    bytes32 hash = genDataHash(destinationAddress);
+    bytes32 hash = genDataHash(destinationAddress, voucherHash);
 
     address signer = ECDSA.recover(hash, v, r, s);
 
@@ -92,22 +98,23 @@ abstract contract ChainClaim is EIP712 {
   function claim(
     address issuedAddress,
     address destinationAddress,
+    bytes32 voucherHash,
     uint8[2] memory v,
     bytes32[2] memory r,
     bytes32[2] memory s
   ) internal returns (bool) {
-    if (usedClaims[issuedAddress]) {
+    if (usedVouchers[voucherHash]) {
       revert ErrorUsedClaim();
     }
 
-    if (!isValidIssuerSig(issuedAddress, v[0], r[0], s[0]))
+    if (!isValidIssuerSig(issuedAddress, voucherHash, v[0], r[0], s[0]))
       revert ErrorInvalidIssuerSignature();
 
     if (
-      !isValidClaimantSig(issuedAddress, destinationAddress, v[1], r[1], s[1])
+      !isValidClaimantSig(issuedAddress, destinationAddress, voucherHash, v[1], r[1], s[1])
     ) revert ErrorInvalidClaimantSignature();
 
-    usedClaims[issuedAddress] = true;
+    usedVouchers[voucherHash] = true;
 
     return true;
   }

@@ -14,38 +14,49 @@ contract ExampleImplementation is ChainClaim {
 
   function _isValidIssuerSig(
     address issuedAddress,
+    bytes32 voucherHash,
     uint8 v,
     bytes32 r,
     bytes32 s
   ) external view returns (bool) {
-    return isValidIssuerSig(issuedAddress, v, r, s);
+    return isValidIssuerSig(issuedAddress, voucherHash, v, r, s);
   }
 
   function _isValidClaimantSig(
     address issuedAddress,
     address destinationAddress,
+    bytes32 voucherHash,
     uint8 v,
     bytes32 r,
     bytes32 s
   ) external view returns (bool) {
-    return isValidClaimantSig(issuedAddress, destinationAddress, v, r, s);
+    return
+      isValidClaimantSig(
+        issuedAddress,
+        destinationAddress,
+        voucherHash,
+        v,
+        r,
+        s
+      );
   }
 
-  function _genDataHash(address chainedAddress)
+  function _genDataHash(address chainedAddress, bytes32 voucherHash)
     external
     view
     returns (bytes32)
   {
-    return genDataHash(chainedAddress);
+    return genDataHash(chainedAddress, voucherHash);
   }
 
   function takeBalance(
     address issuedAddress,
+    bytes32 voucherHash,
     uint8[2] memory v,
     bytes32[2] memory r,
     bytes32[2] memory s
   ) external {
-    bool validClaim = claim(issuedAddress, msg.sender, v, r, s);
+    bool validClaim = claim(issuedAddress, msg.sender, voucherHash, v, r, s);
 
     require(validClaim, "Invalid claim");
 
@@ -72,6 +83,8 @@ contract ChainClaimTestSetup {
   bytes32 claimCodeR;
   bytes32 claimCodeS;
 
+  bytes32 voucherHash = keccak256("blah");
+
   function setUp() public {
     ExampleImplementation deployedEx = new ExampleImplementation(
       issuerAddress,
@@ -81,7 +94,7 @@ contract ChainClaimTestSetup {
 
     (claimCodeV, claimCodeR, claimCodeS) = vm.sign(
       issuerPkey,
-      target._genDataHash(claimCodeAddress)
+      target._genDataHash(claimCodeAddress, voucherHash)
     );
   }
 }
@@ -92,6 +105,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
   function testIsValidIssuerSig() public {
     bool valid = target._isValidIssuerSig(
       claimCodeAddress,
+      voucherHash,
       claimCodeV,
       claimCodeR,
       claimCodeS
@@ -104,22 +118,27 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     bool valid;
     valid = target._isValidIssuerSig(
       claimCodeAddress,
+      voucherHash,
       claimCodeV,
       claimCodeR,
       bytes32(uint256(claimCodeS) + 1)
     );
     assertTrue(!valid);
 
+    vm.expectRevert("ECDSA: invalid signature");
     valid = target._isValidIssuerSig(
       claimCodeAddress,
+      voucherHash,
       claimCodeV,
       bytes32(uint256(claimCodeR) + 1),
       claimCodeS
     );
     assertTrue(!valid);
 
+    vm.expectRevert("ECDSA: invalid signature 'v' value");
     valid = target._isValidIssuerSig(
       claimCodeAddress,
+      voucherHash,
       claimCodeV + 1,
       claimCodeR,
       claimCodeS
@@ -128,6 +147,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
 
     valid = target._isValidIssuerSig(
       address(0),
+      voucherHash,
       claimCodeV,
       claimCodeR,
       claimCodeS
@@ -137,12 +157,14 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
 
   function testIsValidClaimantSig() public {
     address someAddress = 0xB07DAd0000000000000000000000000000000002;
-    bytes32 hash = target._genDataHash(someAddress);
+    bytes32 hash = target._genDataHash(someAddress, voucherHash);
 
     (uint8 v, bytes32 r, bytes32 s) = vm.sign(claimCodePkey, hash);
+
     bool valid = target._isValidClaimantSig(
       claimCodeAddress,
       someAddress,
+      voucherHash,
       v,
       r,
       s
@@ -153,7 +175,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
 
   function testIsInvalidClaimantSig() public {
     address someAddress = 0xB07DAd0000000000000000000000000000000002;
-    bytes32 hash = target._genDataHash(someAddress);
+    bytes32 hash = target._genDataHash(someAddress, voucherHash);
 
     (uint8 v, bytes32 r, bytes32 s) = vm.sign(claimCodePkey, hash);
 
@@ -161,6 +183,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     valid = target._isValidClaimantSig(
       claimCodeAddress,
       someAddress,
+      voucherHash,
       v,
       r,
       bytes32(uint256(s) + 1)
@@ -171,6 +194,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     valid = target._isValidClaimantSig(
       claimCodeAddress,
       someAddress,
+      voucherHash,
       v,
       bytes32(uint256(r) + 1),
       s
@@ -181,16 +205,49 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     valid = target._isValidClaimantSig(
       claimCodeAddress,
       someAddress,
-      v - 1,
+      voucherHash,
+      v - 2,
+      r,
+      s
+    );
+    assertTrue(!valid);
+    
+
+    valid = target._isValidClaimantSig(
+      address(0),
+      someAddress,
+      voucherHash,
+      v,
       r,
       s
     );
     assertTrue(!valid);
 
-    valid = target._isValidClaimantSig(address(0), someAddress, v, r, s);
+    valid = target._isValidClaimantSig(
+      claimCodeAddress,
+      address(0),
+      voucherHash,
+      v,
+      r,
+      s
+    );
     assertTrue(!valid);
+  }
+  
+  function testInvalidVoucherHash() public {
+    address someAddress = 0xB07DAd0000000000000000000000000000000002;
+    bytes32 invalidVoucherHash = keccak256("not blah");
+    bytes32 hash = target._genDataHash(someAddress, voucherHash);
+    (uint8 v, bytes32 r, bytes32 s) = vm.sign(claimCodePkey, hash);
 
-    valid = target._isValidClaimantSig(claimCodeAddress, address(0), v, r, s);
+    bool valid = target._isValidClaimantSig(
+      claimCodeAddress,
+      someAddress,
+      invalidVoucherHash,
+      v,
+      r,
+      s
+    );
     assertTrue(!valid);
   }
 
@@ -198,7 +255,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     vm.deal(address(target), 1 ether);
     vm.deal(address(this), 0);
 
-    bytes32 hash = target._genDataHash(address(this));
+    bytes32 hash = target._genDataHash(address(this), voucherHash);
     (uint8 v, bytes32 r, bytes32 s) = vm.sign(claimCodePkey, hash);
 
     vm.expectRevert(
@@ -206,6 +263,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     );
     target.takeBalance(
       address(0),
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [claimCodeS, s]
@@ -216,6 +274,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     );
     target.takeBalance(
       claimCodeAddress,
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [bytes32(uint256(claimCodeS) + 1), s]
@@ -226,6 +285,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     );
     target.takeBalance(
       claimCodeAddress,
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [claimCodeS, bytes32(uint256(s) + 1)]
@@ -233,6 +293,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
 
     target.takeBalance(
       claimCodeAddress,
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [claimCodeS, s]
@@ -244,6 +305,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     vm.expectRevert(abi.encodePacked(bytes4(keccak256("ErrorUsedClaim()"))));
     target.takeBalance(
       claimCodeAddress,
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [claimCodeS, s]
