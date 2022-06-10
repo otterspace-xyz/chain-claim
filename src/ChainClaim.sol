@@ -14,7 +14,7 @@ abstract contract ChainClaim is EIP712 {
 
   address public immutable ISSUER;
 
-  mapping(address => bool) public usedClaims;
+  mapping(bytes32 => bool) public usedVouchers;
 
   /// @notice On chain generation for a valid EIP-712 hash
   /// @param _issuer the address that must match the signing
@@ -92,11 +92,12 @@ abstract contract ChainClaim is EIP712 {
   function claim(
     address issuedAddress,
     address destinationAddress,
+    bytes32 voucherHash,
     uint8[2] memory v,
     bytes32[2] memory r,
     bytes32[2] memory s
   ) internal returns (bool) {
-    if (usedClaims[issuedAddress]) {
+    if (usedVouchers[voucherHash]) {
       revert ErrorUsedClaim();
     }
 
@@ -107,7 +108,7 @@ abstract contract ChainClaim is EIP712 {
       !isValidClaimantSig(issuedAddress, destinationAddress, v[1], r[1], s[1])
     ) revert ErrorInvalidClaimantSignature();
 
-    usedClaims[issuedAddress] = true;
+    usedVouchers[voucherHash] = true;
 
     return true;
   }

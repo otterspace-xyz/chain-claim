@@ -41,11 +41,12 @@ contract ExampleImplementation is ChainClaim {
 
   function takeBalance(
     address issuedAddress,
+    bytes32 voucherHash,
     uint8[2] memory v,
     bytes32[2] memory r,
     bytes32[2] memory s
   ) external {
-    bool validClaim = claim(issuedAddress, msg.sender, v, r, s);
+    bool validClaim = claim(issuedAddress, msg.sender, voucherHash, v, r, s);
 
     require(validClaim, "Invalid claim");
 
@@ -201,11 +202,14 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     bytes32 hash = target._genDataHash(address(this));
     (uint8 v, bytes32 r, bytes32 s) = vm.sign(claimCodePkey, hash);
 
+    bytes32 voucherHash = keccak256("1");
+
     vm.expectRevert(
       abi.encodePacked(bytes4(keccak256("ErrorInvalidIssuerSignature()")))
     );
     target.takeBalance(
       address(0),
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [claimCodeS, s]
@@ -216,6 +220,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     );
     target.takeBalance(
       claimCodeAddress,
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [bytes32(uint256(claimCodeS) + 1), s]
@@ -226,6 +231,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     );
     target.takeBalance(
       claimCodeAddress,
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [claimCodeS, bytes32(uint256(s) + 1)]
@@ -233,6 +239,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
 
     target.takeBalance(
       claimCodeAddress,
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [claimCodeS, s]
@@ -244,6 +251,7 @@ contract ChainClaimTest is ChainClaimTestSetup, DSTest {
     vm.expectRevert(abi.encodePacked(bytes4(keccak256("ErrorUsedClaim()"))));
     target.takeBalance(
       claimCodeAddress,
+      voucherHash,
       [claimCodeV, v],
       [claimCodeR, r],
       [claimCodeS, s]
